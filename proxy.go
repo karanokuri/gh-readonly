@@ -5,13 +5,39 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/parser"
 )
+
+func isGraphQLMutation(body []byte) bool {
+	var payload struct {
+		Query         string `json:"query"`
+		OperationName string `json:"operationName"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return true // パース不能は安全側に倒して遮断
+	}
+	doc, err := parser.ParseQuery(&ast.Source{Input: payload.Query})
+	if err != nil {
+		return true
+	}
+	for _, op := range doc.Operations {
+		if payload.OperationName == "" || op.Name == payload.OperationName {
+			if op.Operation != ast.Query {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 var writeMethods = map[string]bool{
 	http.MethodPost:   true,
@@ -86,7 +112,17 @@ func serveConnections(conn net.Conn) {
 			return
 		}
 
-		if writeMethods[req.Method] {
+		shouldBlock := writeMethods[req.Method]
+		if shouldBlock && req.URL.Path == "/graphql" {
+			body, err := io.ReadAll(req.Body)
+			req.Body.Close()
+			if err == nil {
+				req.Body = io.NopCloser(bytes.NewReader(body))
+				shouldBlock = isGraphQLMutation(body)
+			}
+		}
+
+		if shouldBlock {
 			io.Copy(io.Discard, req.Body)
 			req.Body.Close()
 

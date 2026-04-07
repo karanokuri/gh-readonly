@@ -21,7 +21,6 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          cache: false
 
       - name: vet
         run: go vet ./...
@@ -44,6 +43,25 @@ jobs:
         run: |
           out=$(./gh-readonly api --method POST /repos/karanokuri/gh-readonly/issues \
             --field title="[BUG] gh-readonly failed to block POST — write protection is broken" 2>&1) && exit 1 || true
+          echo "$out" | grep -q "gh-readonly: denied"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Integration - allow GraphQL query
+        run: |
+          ./gh-readonly api graphql -f query='query { viewer { login } }' \
+            --jq '.data.viewer.login' | grep -q .
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Integration - deny GraphQL mutation
+        run: |
+          repo_id=$(gh api /repos/${{ github.repository }} --jq .node_id)
+          out=$(./gh-readonly api graphql \
+            -f query='mutation($id:ID!,$t:String!){createIssue(input:{repositoryId:$id,title:$t}){issue{id}}}' \
+            -f id="$repo_id" \
+            -f title="[BUG] gh-readonly failed to block GraphQL mutation — write protection is broken" \
+            2>&1) && exit 1 || true
           echo "$out" | grep -q "gh-readonly: denied"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -75,7 +93,6 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          cache: false
 
       - name: Build
         env:

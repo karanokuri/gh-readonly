@@ -102,6 +102,46 @@ func TestProxyDenyPatch(t *testing.T) {
 	}
 }
 
+// TestProxyDenyGraphQLMutation はネットワーク不要（deny はプロキシ内で完結する）
+func TestProxyDenyGraphQLMutation(t *testing.T) {
+	client, cleanup := startTestProxy(t)
+	defer cleanup()
+
+	body := strings.NewReader(`{"query":"mutation { createIssue(input:{repositoryId:\"1\",title:\"t\"}) { issue { id } } }"}`)
+	req, _ := http.NewRequest("POST", "https://api.github.com/graphql", body)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", resp.StatusCode)
+	}
+}
+
+// TestProxyAllowGraphQLQuery はGETリクエストと同様にGraphQL queryが通ることを確認（要gh認証）
+func TestProxyAllowGraphQLQuery(t *testing.T) {
+	token := ghToken(t)
+	client, cleanup := startTestProxy(t)
+	defer cleanup()
+
+	body := strings.NewReader(`{"query":"query { viewer { login } }"}`)
+	req, _ := http.NewRequest("POST", "https://api.github.com/graphql", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "token "+token)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusForbidden {
+		t.Error("GraphQL query should not be denied")
+	}
+}
+
 // TestProxyDenyDelete はネットワーク不要（deny はプロキシ内で完結する）
 func TestProxyDenyDelete(t *testing.T) {
 	client, cleanup := startTestProxy(t)
