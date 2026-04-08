@@ -97,7 +97,7 @@ jobs:
             GOOS=${pair%/*} GOARCH=${pair#*/}
             CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath \
               -ldflags="-s -w -X main.version=${BUILD_DATE}" \
-              -o "gh-readonly_${GOOS}_${GOARCH}" .
+              -o "gh-readonly_${GOOS}-${GOARCH}" .
           done
 
       - name: Create/update release
@@ -106,7 +106,7 @@ jobs:
         run: |
           assets=()
           for pair in $PLATFORMS; do
-            assets+=("gh-readonly_${pair%/*}_${pair#*/}")
+            assets+=("gh-readonly_${pair%/*}-${pair#*/}")
           done
           gh release delete latest --yes 2>/dev/null || true
           git push origin :refs/tags/latest 2>/dev/null || true
