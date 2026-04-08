@@ -11,6 +11,9 @@ permissions:
   id-token: write
   attestations: write
 
+env:
+  PLATFORMS: linux/amd64 linux/arm64
+
 jobs:
   test:
     name: Test
@@ -75,18 +78,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  build:
-    name: Build
+  release:
+    name: Release
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
     steps:
       - uses: actions/checkout@v6
 
@@ -94,43 +90,25 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
+      - name: Cross-compile
         run: |
-          BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          go build -trimpath -ldflags="-s -w -X main.version=${BUILD_DATE}" \
-            -o gh-readonly_${{ matrix.goos }}_${{ matrix.goarch }} .
-
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@v4
-        with:
-          subject-path: gh-readonly_${{ matrix.goos }}_${{ matrix.goarch }}
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: gh-readonly_${{ matrix.goos }}_${{ matrix.goarch }}
-          path: gh-readonly_${{ matrix.goos }}_${{ matrix.goarch }}
-
-  release:
-    name: Release
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: gh-readonly_*
-          merge-multiple: true
+          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          for pair in $PLATFORMS; do
+            GOOS=${pair%/*} GOARCH=${pair#*/}
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath \
+              -ldflags="-s -w -X main.version=${BUILD_DATE}" \
+              -o "gh-readonly_${GOOS}_${GOARCH}" .
+          done
 
       - name: Create/update release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          assets=()
+          for pair in $PLATFORMS; do
+            assets+=("gh-readonly_${pair%/*}_${pair#*/}")
+          done
           gh release delete latest --yes 2>/dev/null || true
           git push origin :refs/tags/latest 2>/dev/null || true
           gh release create latest --title "latest" --target ${{ github.sha }} \
-            gh-readonly_linux_amd64 gh-readonly_linux_arm64
+            "${assets[@]}"
