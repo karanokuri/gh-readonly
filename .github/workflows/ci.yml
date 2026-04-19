@@ -12,7 +12,7 @@ permissions:
   attestations: write
 
 env:
-  PLATFORMS: linux/amd64 linux/arm64
+  PLATFORMS: linux/amd64 linux/arm64 windows/amd64
 
 jobs:
   test:
@@ -95,9 +95,11 @@ jobs:
           BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           for pair in $PLATFORMS; do
             GOOS=${pair%/*} GOARCH=${pair#*/}
+            EXT=""
+            if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
             CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -trimpath \
               -ldflags="-s -w -X main.version=${BUILD_DATE}" \
-              -o "gh-readonly_${GOOS}-${GOARCH}" .
+              -o "gh-readonly_${GOOS}-${GOARCH}${EXT}" .
           done
 
       - name: Create/update release
@@ -106,7 +108,10 @@ jobs:
         run: |
           assets=()
           for pair in $PLATFORMS; do
-            assets+=("gh-readonly_${pair%/*}-${pair#*/}")
+            GOOS=${pair%/*}
+            EXT=""
+            if [ "$GOOS" = "windows" ]; then EXT=".exe"; fi
+            assets+=("gh-readonly_${pair%/*}-${pair#*/}${EXT}")
           done
           gh release delete latest --yes 2>/dev/null || true
           git push origin :refs/tags/latest 2>/dev/null || true
