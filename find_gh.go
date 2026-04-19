@@ -4,7 +4,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 )
+
+func ghName() string {
+	if runtime.GOOS == "windows" {
+		return "gh.exe"
+	}
+	return "gh"
+}
 
 func findRealGH() (string, error) {
 	self, err := os.Executable()
@@ -18,7 +26,7 @@ func findRealGH() (string, error) {
 
 	pathEnv := os.Getenv("PATH")
 	for _, dir := range filepath.SplitList(pathEnv) {
-		candidate := filepath.Join(dir, "gh")
+		candidate := filepath.Join(dir, ghName())
 		resolved, err := filepath.EvalSymlinks(candidate)
 		if err != nil {
 			continue

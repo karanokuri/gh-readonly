@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 )
 
@@ -16,6 +17,11 @@ func ghConfigDir() (string, error) {
 	}
 	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
 		return filepath.Join(d, "gh"), nil
+	}
+	if runtime.GOOS == "windows" {
+		if d := os.Getenv("AppData"); d != "" {
+			return filepath.Join(d, "GitHub CLI"), nil
+		}
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
