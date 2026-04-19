@@ -1,35 +1,32 @@
 package main
 
 import (
-	"crypto/tls"
-	"crypto/x509"
+	"context"
 	"io"
+	"net"
 	"net/http"
-	"net/url"
 	"os/exec"
 	"strings"
 	"testing"
 )
 
-func makeProxyClient(port string, caCert *x509.Certificate) *http.Client {
-	pool := x509.NewCertPool()
-	pool.AddCert(caCert)
-	proxyURL, _ := url.Parse("http://127.0.0.1:" + port)
+func makeProxyClient(socketPath string) *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
-			Proxy:           http.ProxyURL(proxyURL),
-			TLSClientConfig: &tls.Config{RootCAs: pool},
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+			},
 		},
 	}
 }
 
 func startTestProxy(t *testing.T) (*http.Client, func()) {
 	t.Helper()
-	port, caCert, cleanup, err := startProxy()
+	socketPath, cleanup, err := startProxy()
 	if err != nil {
 		t.Fatalf("startProxy: %v", err)
 	}
-	return makeProxyClient(port, caCert), cleanup
+	return makeProxyClient(socketPath), cleanup
 }
 
 func ghToken(t *testing.T) string {
@@ -46,7 +43,7 @@ func TestProxyDenyWrite(t *testing.T) {
 	client, cleanup := startTestProxy(t)
 	defer cleanup()
 
-	req, _ := http.NewRequest("POST", "https://api.github.com/repos/owner/repo/issues", nil)
+	req, _ := http.NewRequest("POST", "http://api.github.com/repos/owner/repo/issues", nil)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
@@ -68,7 +65,7 @@ func TestProxyAllowGet(t *testing.T) {
 	client, cleanup := startTestProxy(t)
 	defer cleanup()
 
-	req, _ := http.NewRequest("GET", "https://api.github.com/repos/karanokuri/gh-readonly", nil)
+	req, _ := http.NewRequest("GET", "http://api.github.com/repos/karanokuri/gh-readonly", nil)
 	req.Header.Set("Authorization", "token "+token)
 	resp, err := client.Do(req)
 	if err != nil {
@@ -86,7 +83,7 @@ func TestProxyDenyPatch(t *testing.T) {
 	client, cleanup := startTestProxy(t)
 	defer cleanup()
 
-	req, _ := http.NewRequest("PATCH", "https://api.github.com/repos/owner/repo/issues/1", nil)
+	req, _ := http.NewRequest("PATCH", "http://api.github.com/repos/owner/repo/issues/1", nil)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
@@ -108,7 +105,7 @@ func TestProxyDenyGraphQLMutation(t *testing.T) {
 	defer cleanup()
 
 	body := strings.NewReader(`{"query":"mutation { createIssue(input:{repositoryId:\"1\",title:\"t\"}) { issue { id } } }"}`)
-	req, _ := http.NewRequest("POST", "https://api.github.com/graphql", body)
+	req, _ := http.NewRequest("POST", "http://api.github.com/graphql", body)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
@@ -128,7 +125,7 @@ func TestProxyAllowGraphQLQuery(t *testing.T) {
 	defer cleanup()
 
 	body := strings.NewReader(`{"query":"query { viewer { login } }"}`)
-	req, _ := http.NewRequest("POST", "https://api.github.com/graphql", body)
+	req, _ := http.NewRequest("POST", "http://api.github.com/graphql", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "token "+token)
 	resp, err := client.Do(req)
@@ -147,7 +144,7 @@ func TestProxyDenyDelete(t *testing.T) {
 	client, cleanup := startTestProxy(t)
 	defer cleanup()
 
-	req, _ := http.NewRequest("DELETE", "https://api.github.com/repos/owner/repo/issues/1", nil)
+	req, _ := http.NewRequest("DELETE", "http://api.github.com/repos/owner/repo/issues/1", nil)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)

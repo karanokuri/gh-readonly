@@ -8,19 +8,22 @@ import (
 var version = "devel"
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	realGH, err := findRealGH()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gh-readonly: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
-	port, caCert, cleanup, err := startProxy()
+	socketPath, cleanup, err := startProxy()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gh-readonly: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	defer cleanup()
 
-	exitCode := runGH(realGH, os.Args[1:], port, caCert)
-	os.Exit(exitCode)
+	return runGH(realGH, os.Args[1:], socketPath)
 }
